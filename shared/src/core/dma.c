@@ -19,12 +19,7 @@ static uint16_t dma_get_write_pos(void)
     return BUFFER_LENGTH - dma_get_number_of_data(DMA1, DMA_STREAM5);
 }
 
-bool dma_data_available(void)
-{
-    return dma_get_write_pos() != read_pos;
-}
-
-void dma_read_buffer(uint8_t* data, uint16_t pos)
+static void dma_read_buffer(uint8_t* data, uint16_t pos)
 {
     *data = buffer[pos];
 
@@ -33,6 +28,11 @@ void dma_read_buffer(uint8_t* data, uint16_t pos)
     {
         read_pos = 0;
     }
+}
+
+bool dma_data_available(void)
+{
+    return dma_get_write_pos() != read_pos;
 }
 
 bool dma_read(uint8_t* data)
@@ -77,4 +77,15 @@ void dma_setup(void)
     dma_enable_circular_mode(USING_DMA, USING_STREAM);
 
     dma_enable_stream(USING_DMA, USING_STREAM);
+}
+
+void dma_teardown(void)
+{
+    dma_disable_stream(USING_DMA, USING_STREAM);
+
+    dma_disable_memory_increment_mode(USING_DMA, USING_STREAM);
+
+    dma_stream_reset(USING_DMA, USING_STREAM);
+
+    rcc_periph_clock_disable(RCC_DMA1);
 }

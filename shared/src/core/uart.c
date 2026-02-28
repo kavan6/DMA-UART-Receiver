@@ -3,6 +3,7 @@
 #include <libopencm3/stm32/usart.h>
 #include <libopencm3/cm3/nvic.h>
 
+#include "core/ring-buffer.h"
 #include "core/uart.h"
 #include "core/dma.h"
 
@@ -10,25 +11,41 @@
 #define PARITY_BITS      (0)
 #define STOP_BITS        (1)
 #define BAUD_RATE        (115200)
-#define RING_BUFFER_SIZE (128)
 
+#define RX_BUFFER_SIZE   (128)
+#define TX_BUFFER_SIZE   (64)
+
+static uint8_t rx_buffer[RX_BUFFER_SIZE];
+static uint8_t tx_buffer[TX_BUFFER_SIZE];
+
+static ring_buffer_t rx_rb;
+static ring_buffer_t tx_rb;
+
+static void uart_rx_process(void)
+{
+    uint8_t byte;
+
+    while(dma_read(&byte))
+    {
+        ring_buffer_write(&rx_rb, byte);
+    }
+}
 
 uint32_t uart_read(uint8_t* data, const uint32_t length)
 {
-    if (length == 0)
-    {
-        return 0;
-    }
+    uart_rx_process();
 
-    for (uint32_t bytes_read = 0; bytes_read < length; bytes_read++)
+    uint32_t bytes_read = 0;
+
+    for (; bytes_read < length; bytes_read++)
     {
-        if (!dma_read(&data[bytes_read]))
+        if (!ring_buffer_read(&rx_rb, &data[bytes_read]))
         {
             return bytes_read;
         }
     }
 
-    return length;
+    return bytes_read;
 }
 
 void uart_setup(void)
@@ -41,6 +58,9 @@ void uart_setup(void)
     usart_set_baudrate(USART2, BAUD_RATE);
     usart_set_parity(USART2, PARITY_BITS);
     usart_set_stopbits(USART2, STOP_BITS);
+
+    ring_buffer_setup(&rx_rb, rx_buffer, RX_BUFFER_SIZE);
+    ring_buffer_setup(&tx_rb, tx_buffer, TX_BUFFER_SIZE);
 
     dma_setup();
 
@@ -57,6 +77,8 @@ void uart_teardown(void)
     usart_disable_rx_dma(USART2);
 
     usart_disable(USART2);
+
+    dma_teardown();
 
     rcc_periph_clock_disable(RCC_USART2);
 }
@@ -85,5 +107,6 @@ uint8_t uart_read_byte(void)
 
 bool uart_data_available(void)
 {
-    return dma_data_available();
+    uart_rx_process();
+    return !ring_buffer_empty(&rx_rb);
 }
