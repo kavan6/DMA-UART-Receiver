@@ -4,7 +4,7 @@
 #include <libopencm3/cm3/nvic.h>
 
 #include "core/uart.h"
-#include "core/ring-buffer.h"
+#include "core/dma.h"
 
 #define DATA_BITS        (8)
 #define PARITY_BITS      (0)
@@ -12,8 +12,24 @@
 #define BAUD_RATE        (115200)
 #define RING_BUFFER_SIZE (128)
 
-static ring_buffer_t rb =   {0U};
-static uint8_t data_buffer[RING_BUFFER_SIZE] = {0U};
+
+uint32_t uart_read(uint8_t* data, const uint32_t length)
+{
+    if (length == 0)
+    {
+        return 0;
+    }
+
+    for (uint32_t bytes_read = 0; bytes_read < length; bytes_read++)
+    {
+        if (!dma_read(&data[bytes_read]))
+        {
+            return bytes_read;
+        }
+    }
+
+    return length;
+}
 
 void uart_setup(void)
 {
@@ -26,11 +42,20 @@ void uart_setup(void)
     usart_set_parity(USART2, PARITY_BITS);
     usart_set_stopbits(USART2, STOP_BITS);
 
+    dma_setup();
+
+    (void)USART_SR(USART2);
+    (void)USART_DR(USART2);
+
+    usart_enable_rx_dma(USART2);
+    
     usart_enable(USART2);
 }
 
 void uart_teardown(void)
 {
+    usart_disable_rx_dma(USART2);
+
     usart_disable(USART2);
 
     rcc_periph_clock_disable(RCC_USART2);
@@ -56,4 +81,9 @@ uint8_t uart_read_byte(void)
     uint8_t byte = 0;
     (void)uart_read(&byte, 1U);
     return byte;
+}
+
+bool uart_data_available(void)
+{
+    return dma_data_available();
 }
